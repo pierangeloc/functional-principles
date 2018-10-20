@@ -1,4 +1,4 @@
-| \gExceptions, disjunctions and Monad Transformers
+| \gTypeclasses
 
 | Pierangelo Cecchetto
 | @pierangelocecc
@@ -6,111 +6,119 @@
 
 
 | \y\*\!TulipLogic B.V.
+
 ---
-| \* FP and Exceptions
+| \*Example 1: Sorting
 
 --
-1. FP  => Referential Transparency,  Substitution Principle
---
+
+\*List of Int
+
 ```
-def f1: Int = {
-  val t: Int = throw new Exception("Boom!")
-  try {
-    5 + t
-  } catch { case _ => -1 }
+def sort(l: List[Int]): List[Int] = l match {
+  case Nil => Nil
+  case x :: xs =>
+    val (lessThan, notLessThan) = xs.partition(_ < x)
+    sort(lessThan) ++ List(x) ++ sort(notLessThan)
 }
+
 ```
---
-```
-def f2: Int = {
-  try {
-    5 + ((throw new Exception("Boom!")): Int)
-  } catch { case _ => -1 }
-}
-```
+
 ---
-| \* FP and Exceptions
---
-1. FP  => Referential Transparency
---
-2. In Scala there are no Checked Exceptions. \_throws\s is not a language keyword
---
-3. Methods throwing exceptions are not type-safe
---
-4. Exceptions cannot work well with higher-order functions
+| \* Example 1: Sorting
+
+\*List of String
+
 ```
-def map[A,B](l: List[A])(f: A => B): List[B]
+def sort(l: List[String]): List[String] = l match {
+   case Nil => Nil
+   case x :: xs =>
+     val (lessThan, notLessThan) = xs.partition(_ < x)
+     sort(lessThan) ++ List(x) ++ sort(notLessThan)
+ }
 ```
 --
-5. Exceptions abruptly break the program flow
+
+\*Drawback: I can do too much with a fixed type, and I have to
+\*implement one sort for every type
+--
+
+```
+def sort2(l: List[String]): List[String] = l match {
+   case Nil => Nil
+   case x :: xs =>
+     val (lessThan, notLessThan) = xs.partition(_ < x)
+     sort(lessThan) ++ List(x) ++ sort(notLessThan).map(_.toUpperCase)
+ }
+```
+
 ---
-| \* Alternatives to Exceptions
---
-1. Try
---
-:green_heart: Wraps exceptions nicely
-:green_heart: Monadic
---
-:red_circle: Errors are represented only by Exceptions, no custom types
---
-2. Option
---
-:green_heart: Monadic
---
-:red_circle: Hides the cause of the error
---
-3. Either
---
-:green_heart: Explicit about the cause of error
-:green_heart: Monadic in Scala 2.12
-:red_circle: Non monadic in previous versions
---
-4. Scalaz \/, Cats Either
-:green_heart: Explicit about the cause of error
-:green_heart: Monadic
----
-| \* Example: Create transaction on event trigger
+| \* Example 1: Sorting
 
+\*General solution
 
 ```
-def getSubscriptionById(eventId: SubscriptionId): String \/ Subscription = ???
-def getTaskById(taskId: TaskId): String \/ Task = ???
-def createTransactionRequest(task: Task): String \/ TransactionRequest = ???
-def initiateTransaction(txReq: TransactionRequest): String \/ Transaction = ???
-
-val eventSubscriptionId = SubscriptionId(UUID.randomUUID)
-```
---
-```
-
-//linear but cumbersome
-val tx = getEventSubscriptionById(eventSubscriptionId).flatMap { evSubscr =>
-  getTaskById(evSubscr.taskId).flatMap { task =>
-    createTransactionRequest(task).flatMap { txReq =>
-      initateTransaction(txReq)
-    }
+def sort[A](l: List[A]): List[A] = l match {
+    case Nil => Nil
+    case x :: xs =>
+      val (lessThan, notLessThan) = xs.partition(_ < x)
+      sort(lessThan) ++ List(x) ++ sort(notLessThan)
   }
-}
 ```
+--
+
+| \*We took away the structure through polymorphism
+--
+
+| \*Great!!! :muscle:
+--
+
+| \*It doesn't compile! :disappointed:
+
 ---
-| \* Example: Create transaction on event trigger
+| \* Example 1: Sorting
 
+\*General solution
+
+
+\*- We must bring back the minimal requirements to sort
+
+--
 
 ```
-def getSubscriptionById(eventId: SubscriptionId): String \/ Subscription = ???
-def getTaskById(taskId: TaskId): String \/ Task = ???
-def createTransactionRequest(task: Task): String \/ TransactionRequest = ???
-def initiateTransaction(txReq: TransactionRequest): String \/ Transaction = ???
-
-val eventSubscriptionId = EventSubscriptionId(UUID.randomUUID)
+def sort[A](l: List[A])(lt: (A, A) => Boolean): List[A] = l match {
+    case Nil => Nil
+    case x :: xs =>
+      val (lessThan, notLessThan) = xs.partition(lt(_, x) == true)
+      sort(lessThan)(lt) ++ List(x) ++ sort(notLessThan)(lt)
+  }
 ```
-```
 
-//equivalent code
-val tx = for {
-    evSubscr <- getEventSubscriptionById(eventSubscriptionId)
-    task <- getTaskById(evSubscr.taskId)
-    txReq <- createTransactionRequest(task)
-    tx <- initateTransaction(txReq)
-  } yield tx
+--
+
+
+
+\*- We are still in trouble: \_lt\s \*has no restrictions
+---
+
+---
+| \* :star: Typeclasses need laws :star::star::star:
+
+\*Laws for \_lt
+
+- Must satisfy Order relationship laws:
+   forall a: A, b: A, c: A if a < b && b < c ==> a < c
+   forall a: A, b: A, c: A if lt(a, b) && lt(b, c) ==> lt(a, c)
+
+--
+
+```
+def ltLaws[A](lt: (A, A) => Boolean)(implicit arbA: Arbitrary[A]) =
+  new Properties("lt") {
+    property("transitivity") = forAll {
+        (a: A, b: A, c: A) =>
+          (lt(a, b) == true && lt(b, c) == true )  ==>
+             lt(a, c) == true
+      }
+    }
 ```
