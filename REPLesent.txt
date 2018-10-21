@@ -25,7 +25,7 @@ def sort(l: List[Int]): List[Int] = l match {
 ```
 
 ---
-| \* Example 1: Sorting
+| \*Example 1: Sorting
 
 \*List of String
 
@@ -53,9 +53,30 @@ def sort2(l: List[String]): List[String] = l match {
 ```
 
 ---
-| \* Example 1: Sorting
+| \*Example 1: Sorting
 
-\*General solution
+\*Java solution: Inheritance
+
+```
+trait LT {
+  def <(x: LT): Boolean
+}
+
+def sort[A <: LT](l: List[A]): List[A] = l match {
+    case Nil => Nil
+    case x :: xs =>
+      val (lessThan, notLessThan) = xs.partition(_ < x)
+      sort(lessThan) ++ List(x) ++ sort(notLessThan)
+  }
+```
+--
+
+\*Need full control of the hierarchy. Not reusable
+
+---
+| \*Example 1: Sorting
+
+\*Ideal solution
 
 ```
 def sort[A](l: List[A]): List[A] = l match {
@@ -67,58 +88,278 @@ def sort[A](l: List[A]): List[A] = l match {
 ```
 --
 
-| \*We took away the structure through polymorphism
+| \*Full polymorphic, no restrictions on A
 --
 
 | \*Great!!! :muscle:
 --
 
-| \*It doesn't compile! :disappointed:
+| \*It doesn't compile :disappointed::disappointed:
 
 ---
 | \* Example 1: Sorting
 
 \*General solution
 
-
-\*- We must bring back the minimal requirements to sort
-
---
-
 ```
-def sort[A](l: List[A])(lt: (A, A) => Boolean): List[A] = l match {
+def sort[A](l: List[A])(lt: (A, A) => Boolean): List[A] =
+  l match {
     case Nil => Nil
     case x :: xs =>
-      val (lessThan, notLessThan) = xs.partition(lt(_, x) == true)
+      val (lessThan, notLessThan) = xs.partition(lt(_, x))
       sort(lessThan)(lt) ++ List(x) ++ sort(notLessThan)(lt)
   }
 ```
-
+|
+--
+\*- We must provide the minimal machinery to sort
 --
 
-
-
-\*- We are still in trouble: \_lt\s \*has no restrictions
----
+\*- But it's tedious to inject \_lt\s \*every time
+\*- What if we have to inject many functions?
 
 ---
-| \* :star: Typeclasses need laws :star::star::star:
+| \* Example 1: Sorting
 
-\*Laws for \_lt
+\*- Typeclass for Less Than
+--
 
-- Must satisfy Order relationship laws:
-   forall a: A, b: A, c: A if a < b && b < c ==> a < c
-   forall a: A, b: A, c: A if lt(a, b) && lt(b, c) ==> lt(a, c)
+```
+trait LT[A](a: A) {
+  def lt(a: A, b: A): Boolean
+}
+```
+--
+
+```
+def sort[A](l: List[A])(implicit ev: LT[A]): List[A] = l match {
+    case Nil => Nil
+    case x :: xs =>
+      val (lessThan, notLessThan) = xs.partition(ev.lt(_, x))
+      sort(lessThan) ++ List(x) ++ sort(notLessThan)
+  }
+```
+--
+
+\*- Still a bit noisy :thumbsdown:
+---
+| \*Example 1: Sorting
+
+\*- How can we improve syntax?
+--
+
+```
+trait LT[A] {
+  def lt(a: A, b: A): Boolean
+}
+
+object LT {
+  def apply[A](implicit ev: LT[A]): LT[A] = ev
+}
+```
+--
+
+\*Context Bounds
+
+```
+def sort[A: LT](l: List[A]): List[A] = l match {
+    case Nil => Nil
+    case x :: xs =>
+      val (lessThan, notLessThan) = xs.partition(LT[A].lt(_, x))
+      sort(lessThan) ++ List(x) ++ sort(notLessThan)
+  }
+```
+
+---
+| \*Example 1: Sorting
+
+\*Provide implicit instances for types
+
+```
+  implicit val ltInt: LT[Int] = (x, y) => x < y
+  implicit val ltString: LT[String] = (x, y) => x < y
+```
+--
+```
+
+  case class Person(name: String, age: Int)
+  implicit val ltPersonAge: LT[Person] = (x, y) => x.age < y.age
+```
+--
+
+```
+  sort(List(5,4,3,2,1))
+```
+--
+```
+  sort(List("Schroedinger", "Feynman", "Einstein"))
+```
+--
+```
+sort(List(Person("CEO", 40), Person("MGR", 35), Person("DEV", 28)))
+```
+--
+```
+sort(List(BigDecimal(5), BigDecimal(5)))
+```
+
+---
+| :star:\*Typeclasses:star:
+--
+
+| \*Decouple data from operations
+--
+
+| \*Explicit about capabilities required by computation
+--
+
+| \*Guaranteed coherence of implementation on types
+--
+
+| \*Can be implemented for arbitrary types (imported deps)
+
+---
+| :star:\*Typeclasses:star:
+
+\*Definition:
+
+A trait that:
+
+--
+\*- Has no state
+
+--
+\*- Has one type parameter
+
+--
+\*- Has at least one abstract method
+
+--
+\*- Can have derived methods
+
+Implementations:
+
+\* In the CO of the Typeclass
+\* In the CO of the types
+\* In implicit context
+---
+
+| :star:\*Typeclasses:star:
+
+| \*They need laws!!!
+
+
+```
+trait LT[A] {
+  def lt(a: A, b: A): Boolean
+}
+```
+--
+
+\*- Not every function \_lt\s \*is valid
+--
+
+\*- Must satisfy Order relationship laws:
+   forall a, b, c ∈ A if a < b && b < c ==> a < c
+   forall a, b, c ∈ A if lt(a, b) && lt(b, c) ==> lt(a, c)
 
 --
 
 ```
-def ltLaws[A](lt: (A, A) => Boolean)(implicit arbA: Arbitrary[A]) =
+def ltLaws[A: LT](implicit arbA: Arbitrary[A]) =
   new Properties("lt") {
     property("transitivity") = forAll {
         (a: A, b: A, c: A) =>
-          (lt(a, b) == true && lt(b, c) == true )  ==>
-             lt(a, c) == true
+          (LT[A].lt(a, b) && LT[A].lt(b, c) )  ==>
+             LT[A].lt(a, c)
       }
     }
 ```
+
+---
+| :star:\*Typeclasses:star:
+
+| \* Are ubiquitous
+--
+```
+import cats._
+import cats.implicits._
+
+implicit val showPerson: Show[Person] =
+  p => s"<name>${p.name}</name><age>${p.age}</age>"
+```
+
+---
+| :star:\*Typeclasses:star:
+--
+
+| \*Express capabilities
+
+--
+\*- Json codec
+```
+  JsonFormat[A]
+```
+
+--
+\*- Sequence actions
+```
+  Monad[F[_]]
+```
+--
+
+\*- Parallel actions
+```
+  Applicative[F[_]]
+```
+---
+| :star:\*Typeclasses:star:
+
+
+\*- Repository
+```
+  trait PersonRepo[F[_]] {
+    def getPerson(id: Int): F[Person]
+    def insertPerson(p: Person): F[Person]
+  }
+```
+--
+
+\*- Logger
+```
+  trait Log[F[_]] {
+    def logInfo(s: String): F[Unit]
+  }
+```
+--
+
+\*- Summon all capabilities you need
+
+```
+  def program[F: Monad : PersonRepo: Log]: F[Person] =
+  for {
+    _ <- logInfo("Starting")
+    p <- PersonRepo[F].getPerson(1)
+    _ <- logInfo("Person retrieved")
+  } yield p
+```
+
+---
+| \gTakeaways
+
+| \* Keep your types generic in the implementations
+--
+
+| \* Separate types from operations on types (Algebras)
+--
+
+| \* Be explicit about capabilities required
+--
+
+| \* Define algebras and compose them
+--
+
+| \* Read books, blog posts. Plenty of material out there
+
+---
+| \gQuestions?
