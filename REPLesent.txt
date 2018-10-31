@@ -125,7 +125,7 @@ def sort[A](l: List[A])(lt: (A, A) => Boolean): List[A] =
 --
 
 ```
-trait LT[A](a: A) {
+trait LT[A] {
   def lt(a: A, b: A): Boolean
 }
 ```
